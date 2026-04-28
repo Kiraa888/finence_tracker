@@ -21,11 +21,12 @@
     font-family: 'Inter', -apple-system, sans-serif;
 }
 
-body {
+body, html {
     background-color: var(--bg-base);
     color: var(--text-main);
     min-height: 100vh;
     overflow-x: hidden;
+    width: 100%;
 }
 
 .dashboard-container {
@@ -434,34 +435,9 @@ button {
 .toast.active { bottom: 2rem; }
 
 /* ==========================================
-   10. RESPONSIVE DESIGN (Media Queries)
-   ========================================== */
-
-/* TABLET VIEW */
-@media (max-width: 1024px) {
-    .bento-grid {
-        grid-template-columns: repeat(2, 1fr);
-    }
-    
-    .span-4 {
-        grid-column: span 2;
-    }
-    
-    .transaction-list-container {
-        grid-column: span 2;
-    }
-}
-
-/* MOBILE VIEW */
-/* ==========================================
-   📱 MOBILE RESPONSIVE FIX
+   10. MOBILE RESPONSIVE FIX
    ========================================== */
 @media screen and (max-width: 768px) {
-    body, html {
-        overflow-x: hidden;
-        width: 100%;
-    }
-
     /* 1. Break the side-by-side flex layout */
     .dashboard-container {
         display: block; 
@@ -479,7 +455,7 @@ button {
         padding: 0;
         flex-direction: row;
         border-radius: 1.5rem 1.5rem 0 0;
-        background: rgba(20, 20, 24, 0.95); /* Darker so text doesn't bleed through */
+        background: rgba(20, 20, 24, 0.95);
         z-index: 1000;
     }
 
@@ -541,6 +517,7 @@ button {
         flex-direction: column;
         width: 100%;
     }
+    
     .quick-actions button { width: 100%; }
 
     /* 6. Panel Fix */
@@ -549,22 +526,5 @@ button {
         width: 100%;
         max-width: 100%;
         border-radius: 0;
-    }
-}
-
-
-/* SMALL MOBILE VIEW */
-@media (max-width: 480px) {
-    .dashboard-container {
-        padding: 0.5rem;
-        padding-bottom: 90px;
-    }
-    
-    .card {
-        padding: 1rem;
-    }
-    
-    .balance-amount {
-        font-size: 1.8rem;
     }
 }
