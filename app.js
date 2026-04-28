@@ -1,11 +1,14 @@
 // ==========================================
 // 1. CONFIG, UTILS & PURE LOGIC
 // ==========================================
-Chart.defaults.color = '#888890';
-Chart.defaults.font.family = 'Inter';
+// Safe check for Chart.js
+if (typeof Chart !== 'undefined') {
+    Chart.defaults.color = '#888890';
+    Chart.defaults.font.family = 'Inter';
+}
 
 const CATEGORY_MAP = {
-    'Salary': '#D4AF37', 'Freelance': '#F3E5AB', 'House': '#e74c3c',
+    'Salary': '#D4AF37', 'Freelance': '#F3E5AB', 'House': '#e74c3c', 'Rent': '#e74c3c',
     'Groceries': '#2ecc71', 'Transport': '#3498db', 'Shopping': '#9b59b6',
     'Credit Card': '#e67e22', 'Food': '#f1c40f', 'Other': '#95a5a6'
 };
@@ -33,7 +36,17 @@ const PureLogic = {
     }, {})
 };
 
-const formatCurrency = (amount) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+// Formats as INR (₹)
+const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('en-IN', { 
+        style: 'currency', 
+        currency: 'INR',
+        maximumFractionDigits: 2
+    }).format(amount);
+};
+
+// Safe ID Generator (Replaces crypto.randomUUID to prevent mobile crashes)
+const generateID = () => Date.now().toString(36) + Math.random().toString(36).substring(2);
 
 const DateUtils = {
     'this-month': () => {
@@ -53,6 +66,7 @@ const DateUtils = {
 
 const animationFrames = new Map();
 function animateValue(obj, start, end, duration) {
+    if (!obj) return;
     if (animationFrames.has(obj)) cancelAnimationFrame(animationFrames.get(obj));
     let startTimestamp = null;
     const step = (timestamp) => {
@@ -67,7 +81,7 @@ function animateValue(obj, start, end, duration) {
 }
 
 // ==========================================
-// 2. STORAGE, STORE & MEMO FACTORY
+// 2. STORAGE & STORE
 // ==========================================
 const storage = {
     get: () => JSON.parse(localStorage.getItem("luxeVault_tx")) || [],
@@ -112,9 +126,9 @@ const createMemo = () => {
 const filterMemo = createMemo();
 
 // ==========================================
-// 3. MUTATIONS (Undo Queue & Optimistic API)
+// 3. MUTATIONS (Capped Undo Queue & API)
 // ==========================================
-const api = { delay: (ms = 600) => new Promise(resolve => setTimeout(resolve, ms)) };
+const api = { delay: (ms = 400) => new Promise(resolve => setTimeout(resolve, ms)) };
 
 const undoStack = [];
 const MAX_UNDO = 20;
@@ -127,11 +141,10 @@ function pushUndo(tx) {
 
 function showUndoToast() {
     const toast = document.getElementById('undo-toast');
+    if(!toast) return;
     const msg = toast.querySelector('span');
-    
     msg.textContent = undoStack.length > 1 ? `${undoStack.length} transactions removed.` : `Transaction removed.`;
     toast.classList.add('active');
-    
     clearTimeout(undoTimeout);
     undoTimeout = setTimeout(() => {
         toast.classList.remove('active');
@@ -142,13 +155,9 @@ function showUndoToast() {
 function handleUndo() {
     if (undoStack.length === 0) return;
     const restoredTx = undoStack.pop();
-    
-    store.dispatch('undo', state => ({
-        ...state,
-        transactions: [restoredTx, ...state.transactions] 
-    }));
-
-    if (undoStack.length === 0) document.getElementById('undo-toast').classList.remove('active');
+    store.dispatch('undo', state => ({ ...state, transactions: [restoredTx, ...state.transactions] }));
+    const toast = document.getElementById('undo-toast');
+    if (undoStack.length === 0 && toast) toast.classList.remove('active');
     else showUndoToast();
 }
 
@@ -163,7 +172,7 @@ async function addTransaction(type, rawAmount, category) {
     const amount = parseFloat(rawAmount);
     if (!amount || isNaN(amount) || amount <= 0 || !category.trim()) return alert("Invalid data.");
     
-    const tx = { id: crypto.randomUUID(), type, amount, category: category.trim(), date: new Date().toISOString() };
+    const tx = { id: generateID(), type, amount, category: category.trim(), date: new Date().toISOString() };
     await syncAction(async () => {
         store.dispatch('transactions', state => ({ ...state, transactions: [tx, ...state.transactions] }));
     });
@@ -186,12 +195,8 @@ async function deleteTransaction(id) {
     if (!txToDelete) return;
     
     pushUndo(txToDelete);
-    
     await syncAction(async () => {
-        store.dispatch('transactions', state => ({
-            ...state,
-            transactions: state.transactions.filter(tx => tx.id !== id)
-        }));
+        store.dispatch('transactions', state => ({ ...state, transactions: state.transactions.filter(tx => tx.id !== id) }));
         showUndoToast();
     });
 }
@@ -214,7 +219,7 @@ const selectors = {
         const sortedTxs = [...store.state.transactions].filter(tx => tx.type === 'income').sort((a, b) => new Date(a.date) - new Date(b.date));
         sortedTxs.forEach(tx => {
             const date = new Date(tx.date);
-            const monthYear = new Intl.DateTimeFormat('en-US', { month: 'short', year: '2-digit' }).format(date);
+            const monthYear = new Intl.DateTimeFormat('en-IN', { month: 'short', year: '2-digit' }).format(date);
             monthlyData[monthYear] = (monthlyData[monthYear] || 0) + tx.amount;
         });
         return monthlyData;
@@ -238,6 +243,7 @@ function renderCounters() {
 
 function renderTransactionList() {
     const tbody = document.getElementById('transaction-tbody');
+    if(!tbody) return;
     tbody.innerHTML = '';
     const filteredTxs = selectors.filteredTransactions();
     
@@ -247,7 +253,7 @@ function renderTransactionList() {
     }
 
     filteredTxs.forEach(tx => {
-        const date = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(tx.date));
+        const date = new Intl.DateTimeFormat('en-IN', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(tx.date));
         const isIncome = tx.type === 'income';
         const formattedAmount = isIncome ? `+${formatCurrency(tx.amount)}` : `-${formatCurrency(tx.amount)}`;
         const dotColor = PureLogic.getCategoryColor(tx.category);
@@ -274,6 +280,7 @@ function renderTransactionList() {
 }
 
 function createOrUpdateChart(instance, ctx, config) {
+    if (typeof Chart === 'undefined') return null; // Safe check
     if (instance) {
         instance.data = config.data;
         if (config.options) instance.options = config.options;
@@ -284,52 +291,61 @@ function createOrUpdateChart(instance, ctx, config) {
 }
 
 function renderCharts() {
+    if (typeof Chart === 'undefined') return;
+
     const expenses = selectors.expensesByCategory();
     const donutLabels = Object.keys(expenses);
     const donutData = Object.values(expenses);
-    const ctxExpense = document.getElementById('expenseChart').getContext('2d');
+    const chartCanvasExp = document.getElementById('expenseChart');
     const emptyMsg = document.getElementById('expense-empty');
 
-    if (donutData.length === 0) {
-        if (expenseChartInstance) { expenseChartInstance.destroy(); expenseChartInstance = null; }
-        ctxExpense.canvas.style.display = 'none';
-        emptyMsg.classList.remove('hidden');
-    } else {
-        ctxExpense.canvas.style.display = 'block';
-        emptyMsg.classList.add('hidden');
-        expenseChartInstance = createOrUpdateChart(expenseChartInstance, ctxExpense, {
-            type: 'doughnut',
-            data: { labels: donutLabels, datasets: [{ data: donutData, backgroundColor: donutLabels.map(PureLogic.getCategoryColor), borderWidth: 0 }] },
-            options: { cutout: '75%', plugins: { legend: { position: 'bottom' } } }
-        });
+    if(chartCanvasExp) {
+        const ctxExpense = chartCanvasExp.getContext('2d');
+        if (donutData.length === 0) {
+            if (expenseChartInstance) { expenseChartInstance.destroy(); expenseChartInstance = null; }
+            ctxExpense.canvas.style.display = 'none';
+            if(emptyMsg) emptyMsg.classList.remove('hidden');
+        } else {
+            ctxExpense.canvas.style.display = 'block';
+            if(emptyMsg) emptyMsg.classList.add('hidden');
+            expenseChartInstance = createOrUpdateChart(expenseChartInstance, ctxExpense, {
+                type: 'doughnut',
+                data: { labels: donutLabels, datasets: [{ data: donutData, backgroundColor: donutLabels.map(PureLogic.getCategoryColor), borderWidth: 0 }] },
+                options: { cutout: '75%', plugins: { legend: { position: 'bottom' } } }
+            });
+        }
     }
 
     const trendData = selectors.incomeTrend();
     const barLabels = Object.keys(trendData);
     const barData = Object.values(trendData);
-    const ctxIncome = document.getElementById('incomeChart').getContext('2d');
+    const chartCanvasInc = document.getElementById('incomeChart');
 
-    if (barData.length === 0) {
-        if (incomeChartInstance) { incomeChartInstance.destroy(); incomeChartInstance = null; }
-        ctxIncome.canvas.style.display = 'none';
-        return;
+    if(chartCanvasInc) {
+        const ctxIncome = chartCanvasInc.getContext('2d');
+        if (barData.length === 0) {
+            if (incomeChartInstance) { incomeChartInstance.destroy(); incomeChartInstance = null; }
+            ctxIncome.canvas.style.display = 'none';
+            return;
+        }
+        
+        ctxIncome.canvas.style.display = 'block';
+        let gradient = ctxIncome.createLinearGradient(0, 0, 0, 400);
+        gradient.addColorStop(0, '#D4AF37');
+        gradient.addColorStop(1, 'rgba(212, 175, 55, 0.1)');
+
+        incomeChartInstance = createOrUpdateChart(incomeChartInstance, ctxIncome, {
+            type: 'bar',
+            data: { labels: barLabels, datasets: [{ label: 'Income', data: barData, backgroundColor: gradient, borderRadius: 8 }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { display: false }, x: { grid: { display: false }, border: { display: false } } } }
+        });
     }
-    
-    ctxIncome.canvas.style.display = 'block';
-    let gradient = ctxIncome.createLinearGradient(0, 0, 0, 400);
-    gradient.addColorStop(0, '#D4AF37');
-    gradient.addColorStop(1, 'rgba(212, 175, 55, 0.1)');
-
-    incomeChartInstance = createOrUpdateChart(incomeChartInstance, ctxIncome, {
-        type: 'bar',
-        data: { labels: barLabels, datasets: [{ label: 'Income', data: barData, backgroundColor: gradient, borderRadius: 8 }] },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { display: false }, x: { grid: { display: false }, border: { display: false } } } }
-    });
 }
 
 function renderUIState() {
     const submitBtn = document.querySelector('#tx-form button[type="submit"]');
     const syncIndicator = document.getElementById('sync-status');
+    if(!submitBtn || !syncIndicator) return;
     
     if (store.state.loading.sync) {
         submitBtn.disabled = true;
@@ -344,6 +360,16 @@ function renderUIState() {
 // 6. EVENT CONTROLLERS
 // ==========================================
 document.addEventListener('DOMContentLoaded', () => {
+    
+    // Fix Navigation Links so they don't break the page
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault(); 
+            document.querySelectorAll('.nav-links li').forEach(li => li.classList.remove('active'));
+            e.target.closest('li').classList.add('active');
+        });
+    });
+
     ['transactions', 'filter', 'undo'].forEach(channel => {
         store.subscribe(channel, renderCounters);
         store.subscribe(channel, renderTransactionList);
@@ -359,19 +385,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentMode = 'add'; 
     let editingId = null;
 
-    const trapFocus = (e) => {
-        const focusable = panel.querySelectorAll('input, select, button:not([disabled])');
-        if (focusable.length === 0) return;
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-        
-        if (e.key === 'Tab') {
-            if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); } 
-            else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
-        }
-    };
-
     const openPanel = (mode = 'add', txData = null) => {
+        if(!panel || !overlay || !txForm) return;
         currentMode = mode;
         const submitBtn = txForm.querySelector('button[type="submit"]');
 
@@ -380,29 +395,26 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('tx-type').value = txData.type;
             document.getElementById('tx-amount').value = txData.amount;
             document.getElementById('tx-category').value = txData.category;
-            document.querySelector('.panel-header h2').textContent = 'Edit Transaction';
+            document.getElementById('panel-title').textContent = 'Edit Transaction';
             submitBtn.textContent = 'Update Vault';
         } else {
             editingId = null;
             txForm.reset();
             document.getElementById('tx-type').value = txData || 'expense';
-            document.querySelector('.panel-header h2').textContent = 'New Transaction';
+            document.getElementById('panel-title').textContent = 'New Transaction';
             submitBtn.textContent = 'Add to Vault';
         }
         panel.classList.add('active');
         overlay.classList.add('active');
-        panel.addEventListener('keydown', trapFocus);
-        document.getElementById('tx-amount').focus();
+        setTimeout(() => document.getElementById('tx-amount').focus(), 100);
     };
 
     const closePanel = () => {
+        if(!panel || !overlay || !txForm) return;
         panel.classList.remove('active');
         overlay.classList.remove('active');
-        panel.removeEventListener('keydown', trapFocus);
         txForm.reset();
     };
-
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && panel.classList.contains('active')) closePanel(); });
 
     document.querySelectorAll('.period-selector button').forEach(btn => {
         btn.addEventListener('click', (e) => {
@@ -412,60 +424,41 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    document.getElementById('btn-transfer').addEventListener('click', () => openPanel('expense'));
-    document.getElementById('btn-request').addEventListener('click', () => openPanel('income'));
-    document.getElementById('btn-close-panel').addEventListener('click', closePanel);
-    overlay.addEventListener('click', closePanel);
+    const btnTransfer = document.getElementById('btn-transfer');
+    const btnRequest = document.getElementById('btn-request');
+    const btnClosePanel = document.getElementById('btn-close-panel');
+    const btnUndo = document.getElementById('btn-undo');
 
-    document.getElementById('btn-undo').addEventListener('click', handleUndo);
+    if(btnTransfer) btnTransfer.addEventListener('click', () => openPanel('expense'));
+    if(btnRequest) btnRequest.addEventListener('click', () => openPanel('income'));
+    if(btnClosePanel) btnClosePanel.addEventListener('click', closePanel);
+    if(overlay) overlay.addEventListener('click', closePanel);
+    if(btnUndo) btnUndo.addEventListener('click', handleUndo);
 
-    txForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const type = document.getElementById('tx-type').value;
-        const amount = document.getElementById('tx-amount').value;
-        const category = document.getElementById('tx-category').value;
-        
-        closePanel(); 
-        if (currentMode === 'add') await addTransaction(type, amount, category);
-        else if (currentMode === 'edit' && editingId) await updateTransaction(editingId, { type, amount, category });
-    });
+    if(txForm) {
+        txForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const type = document.getElementById('tx-type').value;
+            const amount = document.getElementById('tx-amount').value;
+            const category = document.getElementById('tx-category').value;
+            
+            closePanel(); 
+            if (currentMode === 'add') await addTransaction(type, amount, category);
+            else if (currentMode === 'edit' && editingId) await updateTransaction(editingId, { type, amount, category });
+        });
+    }
 
     const tbody = document.getElementById('transaction-tbody');
-    
-    tbody.addEventListener('click', async (e) => {
-        const btn = e.target.closest('button');
-        if (!btn) return;
-        const id = btn.getAttribute('data-id');
-        if (btn.classList.contains('btn-delete')) await deleteTransaction(id);
-        else if (btn.classList.contains('btn-edit')) {
-            const txToEdit = store.state.transactions.find(tx => tx.id === id);
-            if (txToEdit) openPanel('edit', txToEdit);
-        }
-    });
-
-    tbody.addEventListener('keydown', async (e) => {
-        const row = e.target.closest('tr');
-        if (!row) return;
-        
-        const id = row.getAttribute('data-id');
-        
-        if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            const next = row.nextElementSibling;
-            if (next) next.focus();
-        } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            const prev = row.previousElementSibling;
-            if (prev) prev.focus();
-        } else if (e.key === 'Enter') {
-            e.preventDefault();
-            const txToEdit = store.state.transactions.find(tx => tx.id === id);
-            if (txToEdit) openPanel('edit', txToEdit);
-        } else if (e.key === 'Delete' || e.key === 'Backspace') {
-            e.preventDefault();
-            await deleteTransaction(id);
-            const nextFocus = row.nextElementSibling || row.previousElementSibling;
-            if (nextFocus) nextFocus.focus();
-        }
-    });
+    if(tbody) {
+        tbody.addEventListener('click', async (e) => {
+            const btn = e.target.closest('button');
+            if (!btn) return;
+            const id = btn.getAttribute('data-id');
+            if (btn.classList.contains('btn-delete')) await deleteTransaction(id);
+            else if (btn.classList.contains('btn-edit')) {
+                const txToEdit = store.state.transactions.find(tx => tx.id === id);
+                if (txToEdit) openPanel('edit', txToEdit);
+            }
+        });
+    }
 });
